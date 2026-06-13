@@ -616,6 +616,57 @@ End Sub
 
 ' ─── Buttons ──────────────────────────────────────────────────────────────────
 
+' ExportPPT — calls the API to generate a PowerPoint snapshot and saves it to the Desktop.
+' The file is named initiative_tracker_snapshot.pptx (overwritten on each export).
+Public Sub ExportPPT()
+    On Error GoTo Fail
+    Dim url      As String: url      = ApiBase() & "/export/pptx"
+    Dim fileName As String: fileName = "initiative_tracker_snapshot.pptx"
+
+#If Mac Then
+    ' Mac: curl writes the binary directly to disk
+    Dim desktop  As String
+    On Error Resume Next
+    desktop = MacScript("do shell script ""echo $HOME/Desktop""")
+    On Error GoTo Fail
+    desktop = Trim(desktop)
+    Dim savePath As String: savePath = desktop & "/" & fileName
+
+    Dim q   As String: q = Chr(39)
+    Dim cmd As String: cmd = "curl -s -L -o " & q & savePath & q & " " & q & url & q
+    Dim asCMD As String: asCMD = Replace(cmd, Chr(34), Chr(92) & Chr(34))
+    MacScript "do shell script """ & asCMD & """"
+    MsgBox "Presentation saved to Desktop:" & Chr(10) & Chr(10) & savePath, _
+           vbInformation, "Export Complete"
+#Else
+    ' Windows: MSXML2 + ADODB.Stream for binary download
+    Dim savePath As String
+    savePath = Environ("USERPROFILE") & "\Desktop\" & fileName
+
+    Dim x As Object: Set x = CreateObject("MSXML2.XMLHTTP60")
+    x.Open "GET", url, False
+    x.Send
+
+    If x.Status < 200 Or x.Status >= 300 Then
+        Err.Raise vbObjectError + 500, , "HTTP " & x.Status & Chr(10) & x.statusText
+    End If
+
+    Dim st As Object: Set st = CreateObject("ADODB.Stream")
+    st.Open
+    st.Type = 1         ' adTypeBinary
+    st.Write x.responseBody
+    st.SaveToFile savePath, 2   ' adSaveCreateOverWrite
+    st.Close
+    Set st = Nothing: Set x = Nothing
+
+    MsgBox "Presentation saved to Desktop:" & Chr(10) & Chr(10) & savePath, _
+           vbInformation, "Export Complete"
+#End If
+    Exit Sub
+Fail:
+    MsgBox "Export failed:" & Chr(10) & Err.Description, vbCritical, "Error"
+End Sub
+
 ' RefreshAllData — pulls all data from the live API and repopulates all sheets.
 ' Run this any time you want to sync the workbook with the latest app data.
 ' Summary KPIs, every Initiatives row, and the full Updates Log are rebuilt from scratch.
@@ -736,13 +787,14 @@ Public Sub CreateButtons()
 
     ws.Columns("L:L").ColumnWidth = 20
 
-    Dim defs(5, 2) As Variant
+    Dim defs(6, 2) As Variant
     defs(0, 0) = "TestConnection":   defs(0, 1) = "Test Connection":   defs(0, 2) = RGB(71, 85, 105)
     defs(1, 0) = "CreateInitiative": defs(1, 1) = "Create Initiative":  defs(1, 2) = RGB(21, 128, 61)
     defs(2, 0) = "EditInitiative":   defs(2, 1) = "Edit Selected Row":  defs(2, 2) = RGB(29, 78, 216)
     defs(3, 0) = "DeleteInitiative": defs(3, 1) = "Delete Selected":    defs(3, 2) = RGB(185, 28, 28)
     defs(4, 0) = "AddUpdate":        defs(4, 1) = "Add Update Note":     defs(4, 2) = RGB(15, 37, 68)
     defs(5, 0) = "RefreshAllData":   defs(5, 1) = "Refresh All Data":   defs(5, 2) = RGB(13, 148, 136)
+    defs(6, 0) = "ExportPPT":        defs(6, 1) = "Export PPT":         defs(6, 2) = RGB(109, 40, 217)
 
     Dim btnLeft As Double:   btnLeft   = ws.Range("L2").Left + 3
     Dim btnWidth As Double:  btnWidth  = ws.Range("L2").Width - 6
@@ -750,7 +802,7 @@ Public Sub CreateButtons()
     Dim gap As Double:       gap       = 5
     Dim s As Shape
     Dim i As Integer
-    For i = 0 To 5
+    For i = 0 To 6
         Dim macroName As String: macroName = CStr(defs(i, 0))
         Dim caption   As String: caption   = CStr(defs(i, 1))
         Dim fillColor As Long:   fillColor = CLng(defs(i, 2))
